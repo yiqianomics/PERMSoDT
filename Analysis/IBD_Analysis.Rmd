@@ -1,0 +1,14 @@
+---
+title: "IBD_Analysis"
+author: "Yiqian Zhang"
+date: "2025-08-19"
+output: html_document
+---
+
+
+
+
+```{r}
+load("Real_Data/IBD_16s_data_V3.RData")
+```
+
