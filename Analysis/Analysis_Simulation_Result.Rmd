@@ -5,13 +5,13 @@ date: "2025-08-21"
 output: html_document
 ---
 
-
+# Binary
 ```{r}
-result = read.csv("sim_results_all.csv")
+result = read.csv("sim_results_binary.csv")
 head(result)
 ```
 
-# Together
+## Together
 ```{r}
 library(dplyr)
 library(tidyr)
@@ -62,7 +62,7 @@ gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
 print(gg)
 ```
 
-# With different setting
+## With different setting
 ```{r}
 library(dplyr)
 library(tidyr)
@@ -118,3 +118,231 @@ print(gg)
 
 ```
 
+# Continosus
+```{r}
+result = read.csv("sim_results_Continosu.csv")
+head(result)
+```
+
+# Together
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Long form summary (one row per Delta × method)
+by_delta_long <- result %>%
+  select(Delta, p_unadj, p_pool, p_ipw) %>%
+  pivot_longer(-Delta, names_to = "method", values_to = "p") %>%
+  group_by(Delta, method) %>%
+  summarise(
+    n = sum(!is.na(p)),
+    prop_sig = mean(p < 0.05, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Delta, method)
+
+by_delta_long
+
+library(ggplot2)
+
+# Map method names for plotting
+method_labels <- c(
+  p_unadj = "adonis2 (unadjusted)",
+  p_pool  = "adonis2 (+ Z)",
+  p_ipw   = "IPW-PERMANOVA"
+)
+
+plot_df <- by_delta_long %>%
+  mutate(method = recode(method, !!!method_labels),
+         method = factor(method, levels = c("adonis2 (unadjusted)",
+                                            "adonis2 (+ Z)",
+                                            "IPW-PERMANOVA")))
+
+gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+                          color = method, linetype = method, shape = method)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
+  labs(x = expression(Delta),
+       y = "Proportion with p < 0.05",
+       color = "Method", linetype = "Method", shape = "Method",
+       title = "Proportion of significant tests by Δ",
+       subtitle = "Aggregated over replicates / dissimilarities") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+print(gg)
+```
+
+
+
+## With different setting
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
+by_panel <- result %>%
+  select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
+  pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
+  group_by(n, ps, Delta, method) %>%
+  summarise(
+    n_tests = sum(!is.na(p)),
+    prop_sig = mean(p < 0.05, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Nice labels
+method_labels <- c(
+  p_unadj = "adonis2 (unadjusted)",
+  p_pool  = "adonis2 (+ Z)",
+  p_ipw   = "IPW-PERMANOVA"
+)
+
+plot_df <- by_panel %>%
+  mutate(
+    method = factor(recode(method, !!!method_labels),
+                    levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
+    n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
+    ps_f = factor(ps, levels = c(0.1, 2.5),   labels = c("ps = 0.1 (weak)", "ps = 2.5 (strong)"))
+  )
+
+gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+                          color = method, linetype = method, shape = method)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(0, 1),
+                     breaks = seq(0, 1, by = 0.2),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
+  labs(x = expression(Delta),
+       y = "Proportion with p < 0.05",
+       color = "Method", linetype = "Method", shape = "Method",
+       title = "Proportion of significant tests by Δ",
+       subtitle = "Faceted by sample size (columns) and confounding strength ps (rows)") +
+  facet_grid(ps_f ~ n_f) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+print(gg)
+
+# Optional: save to file
+# ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
+
+```
+
+
+# Ordinal
+```{r}
+result = read.csv("sim_results_Ordinal.csv")
+head(result)
+```
+
+# Together
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Long form summary (one row per Delta × method)
+by_delta_long <- result %>%
+  select(Delta, p_unadj, p_pool, p_ipw) %>%
+  pivot_longer(-Delta, names_to = "method", values_to = "p") %>%
+  group_by(Delta, method) %>%
+  summarise(
+    n = sum(!is.na(p)),
+    prop_sig = mean(p < 0.05, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(Delta, method)
+
+by_delta_long
+
+library(ggplot2)
+
+# Map method names for plotting
+method_labels <- c(
+  p_unadj = "adonis2 (unadjusted)",
+  p_pool  = "adonis2 (+ Z)",
+  p_ipw   = "IPW-PERMANOVA"
+)
+
+plot_df <- by_delta_long %>%
+  mutate(method = recode(method, !!!method_labels),
+         method = factor(method, levels = c("adonis2 (unadjusted)",
+                                            "adonis2 (+ Z)",
+                                            "IPW-PERMANOVA")))
+
+gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+                          color = method, linetype = method, shape = method)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
+  labs(x = expression(Delta),
+       y = "Proportion with p < 0.05",
+       color = "Method", linetype = "Method", shape = "Method",
+       title = "Proportion of significant tests by Δ",
+       subtitle = "Aggregated over replicates / dissimilarities") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+print(gg)
+```
+
+## With different setting
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
+by_panel <- result %>%
+  select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
+  pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
+  group_by(n, ps, Delta, method) %>%
+  summarise(
+    n_tests = sum(!is.na(p)),
+    prop_sig = mean(p < 0.05, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Nice labels
+method_labels <- c(
+  p_unadj = "adonis2 (unadjusted)",
+  p_pool  = "adonis2 (+ Z)",
+  p_ipw   = "IPW-PERMANOVA"
+)
+
+plot_df <- by_panel %>%
+  mutate(
+    method = factor(recode(method, !!!method_labels),
+                    levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
+    n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
+    ps_f = factor(ps, levels = c(0.2, 2),   labels = c("ps = 0.2 (weak)", "ps = 2 (strong)"))
+  )
+
+gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+                          color = method, linetype = method, shape = method)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(limits = c(0, 1),
+                     breaks = seq(0, 1, by = 0.2),
+                     labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
+  labs(x = expression(Delta),
+       y = "Proportion with p < 0.05",
+       color = "Method", linetype = "Method", shape = "Method",
+       title = "Proportion of significant tests by Δ",
+       subtitle = "Faceted by sample size (columns) and confounding strength ps (rows)") +
+  facet_grid(ps_f ~ n_f) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "top")
+
+print(gg)
+
+# Optional: save to file
+# ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
+
+```
