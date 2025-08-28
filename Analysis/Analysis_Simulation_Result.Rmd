@@ -320,7 +320,7 @@ plot_df <- by_panel %>%
     method = factor(recode(method, !!!method_labels),
                     levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
     n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
-    ps_f = factor(ps, levels = c(0.2, 2),   labels = c("ps = 0.2 (weak)", "ps = 2 (strong)"))
+    ps_f = factor(ps, levels = c(0.2, 1.2),   labels = c("ps = 0.2 (weak)", "ps = 1.2 (strong)"))
   )
 
 gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
