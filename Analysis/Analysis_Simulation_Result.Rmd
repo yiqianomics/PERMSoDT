@@ -120,7 +120,7 @@ print(gg)
 
 # Continosus
 ```{r}
-result = read.csv("sim_results_Continosu.csv")
+result = read.csv("sim_results_continuous.csv")
 head(result)
 ```
 

@@ -16,6 +16,7 @@ library(Matrix, lib.loc = user_lib)
 library(ape, lib.loc = user_lib)
 # install.packages("phangorn", lib = user_lib)
 library(phangorn, lib.loc = user_lib)
+library(nnet, lib.loc = user_lib)
 # Tree only if build_tree=TRUE:
 #   install.packages(c("ape","phangorn"))
 #   library(ape); library(phangorn)
