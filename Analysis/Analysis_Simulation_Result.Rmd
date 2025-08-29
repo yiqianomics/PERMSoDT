@@ -7,8 +7,8 @@ output: html_document
 
 # Binary
 ```{r}
-result = read.csv("sim_results_binary.csv")
-head(result)
+result1 = read.csv("sim_results_binary.csv")
+head(result1)
 ```
 
 ## Together
@@ -17,7 +17,7 @@ library(dplyr)
 library(tidyr)
 
 # Long form summary (one row per Delta × method)
-by_delta_long <- result %>%
+by_delta_long <- result1 %>%
   select(Delta, p_unadj, p_pool, p_ipw) %>%
   pivot_longer(-Delta, names_to = "method", values_to = "p") %>%
   group_by(Delta, method) %>%
@@ -69,7 +69,7 @@ library(tidyr)
 library(ggplot2)
 
 # Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
-by_panel <- result %>%
+by_panel <- result1 %>%
   select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
   pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
   group_by(n, ps, Delta, method) %>%
@@ -94,7 +94,7 @@ plot_df <- by_panel %>%
     ps_f = factor(ps, levels = c(0.2, 2.0),   labels = c("ps = 0.2 (weak)", "ps = 2 (strong)"))
   )
 
-gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+gg1 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
                           color = method, linetype = method, shape = method)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
@@ -111,7 +111,7 @@ gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
   theme_minimal(base_size = 12) +
   theme(legend.position = "top")
 
-print(gg)
+print(gg1)
 
 # Optional: save to file
 # ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
@@ -124,7 +124,7 @@ result = read.csv("sim_results_continuous.csv")
 head(result)
 ```
 
-# Together
+## Together
 ```{r}
 library(dplyr)
 library(tidyr)
@@ -209,7 +209,7 @@ plot_df <- by_panel %>%
     ps_f = factor(ps, levels = c(0.1, 0.25),   labels = c("ps = 0.1 (weak)", "ps = 0.25 (strong)"))
   )
 
-gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+gg2 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
                           color = method, linetype = method, shape = method)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
@@ -226,7 +226,7 @@ gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
   theme_minimal(base_size = 12) +
   theme(legend.position = "top")
 
-print(gg)
+print(gg2)
 
 # Optional: save to file
 # ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
@@ -323,7 +323,7 @@ plot_df <- by_panel %>%
     ps_f = factor(ps, levels = c(0.2, 1.2),   labels = c("ps = 0.2 (weak)", "ps = 1.2 (strong)"))
   )
 
-gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
+gg3 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
                           color = method, linetype = method, shape = method)) +
   geom_line(size = 1) +
   geom_point(size = 2) +
@@ -340,9 +340,42 @@ gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
   theme_minimal(base_size = 12) +
   theme(legend.position = "top")
 
-print(gg)
+print(gg3)
 
 # Optional: save to file
 # ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
 
 ```
+
+
+# Combine
+
+```{r}
+library(patchwork)
+
+# Helper function to drop title and legend
+strip_plot <- function(p) {
+  p +
+    labs(title = NULL, subtitle = NULL) +
+    theme(legend.position = "none")
+}
+
+# Keep legend in the first plot only
+gg1_clean <- strip_plot(gg1)
+gg2_clean <- strip_plot(gg2)
+gg3_clean <- strip_plot(gg3) +
+              theme(legend.position = "bottom")
+
+# Combine them in one row (or adjust layout)
+combined <- (gg1_clean / gg2_clean / gg3_clean) +
+             plot_annotation(tag_levels = "a")
+
+# Print
+combined
+
+# Save combined plot as PNG
+ggsave("SimulatedResult.png", combined,
+       width = 8, height = 12, dpi = 1000)
+
+```
+
