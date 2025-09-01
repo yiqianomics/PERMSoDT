@@ -1,0 +1,510 @@
+---
+title: "Real_Data_Analysis"
+author: "Yiqian"
+date: "2025-09-01"
+output: html_document
+---
+#Source
+
+```{r}
+library(phyloseq)
+library(vegan)
+setwd("~/Desktop/PERMSoDT")
+source(file.path("R", "ipw_permanova.R"))
+source(file.path("R", "ipw_pcoa.R"))
+```
+
+
+# Ocean
+```{r}
+load("Ocean.RData")
+
+sd <- as.data.frame(sample_data(ps))
+sd[["Depth.nominal"]] <- as.numeric(gsub("[^0-9.+-eE]", "", as.character(sd[["Depth.nominal"]])))
+sample_data(ps) <- sample_data(sd)
+vars <- c("Latitude","Depth.nominal","Temperature","ChlorophyllA",
+          "Gradient.Surface.temp(SST)","Brunt.Väisälä","Oxygen")
+vars_present <- intersect(vars, colnames(sd))
+mask <- rep(TRUE, nrow(sd))
+for (v in vars_present) mask <- mask & !is.na(sd[[v]])
+ps_filt <- prune_samples(rownames(sd)[mask], ps)
+```
+
+## Depth nominal
+
+### Bray-Curtis
+```{r}
+Depth.nominal_filt <- as.numeric(sample_data(ps_filt)[["Depth.nominal"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "bray")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Depth.nominal_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Depth.nominal_filt + Latitude + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Depth.nominal_filt,meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Depth.nominal_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Depth.nominal_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Depth.nominal_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+### Aitchison
+```{r}
+Depth.nominal_filt <- as.numeric(sample_data(ps_filt)[["Depth.nominal"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "aitchison", pseudocount = 0.5)
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Depth.nominal_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Depth.nominal_filt + Latitude + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Depth.nominal_filt,meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Depth.nominal_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Depth.nominal_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Depth.nominal_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+
+### Jaccard
+```{r}
+Depth.nominal_filt <- as.numeric(sample_data(ps_filt)[["Depth.nominal"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "jaccard")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Depth.nominal_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Depth.nominal_filt + Latitude + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Depth.nominal_filt,meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Depth.nominal_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Depth.nominal_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Depth.nominal_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+
+## Latitude
+
+### Bray-Curtis
+```{r}
+Latitude_filt <- as.numeric(sample_data(ps_filt)[["Latitude"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "bray")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Latitude_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Latitude_filt + Depth.nominal + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Latitude_filt,meta[,c("Depth.nominal", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Latitude_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Latitude_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Latitude_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+### Aitchison
+```{r}
+Latitude_filt <- as.numeric(sample_data(ps_filt)[["Latitude"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "aitchison", pseudocount = 0.5)
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Latitude_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Latitude_filt + Depth.nominal + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Latitude_filt,meta[,c("Depth.nominal", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Latitude_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Latitude_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Latitude_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+### Jaccard
+```{r}
+Latitude_filt <- as.numeric(sample_data(ps_filt)[["Latitude"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "jaccard")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Latitude_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Latitude_filt + Depth.nominal + Temperature + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Latitude_filt,meta[,c("Depth.nominal", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Latitude_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Latitude_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Latitude_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+
+## Temperature
+
+### Bray-Curtis
+```{r}
+Temperature_filt <- as.numeric(sample_data(ps_filt)[["Temperature"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "bray")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Temperature_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Temperature_filt + Depth.nominal + Latitude + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Temperature_filt,meta[,c("Depth.nominal", "Latitude", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Temperature_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Temperature_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Temperature_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+### Aitchison
+```{r}
+Temperature_filt <- as.numeric(sample_data(ps_filt)[["Temperature"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "aitchison", pseudocount = 0.5)
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Temperature_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Temperature_filt + Depth.nominal + Latitude + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Temperature_filt,meta[,c("Depth.nominal", "Latitude", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Temperature_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Temperature_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Temperature_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+### Jaccard
+```{r}
+Temperature_filt <- as.numeric(sample_data(ps_filt)[["Temperature"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "jaccard")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ Temperature_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ Temperature_filt + Depth.nominal + Latitude + ChlorophyllA + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,Temperature_filt,meta[,c("Depth.nominal", "Latitude", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+
+### PCoA
+pcoa_res <- vegan::wcmdscale(dist_bray_filt, eig = TRUE, k = 2)   
+scores   <- as.data.frame(pcoa_res$points)
+colnames(scores) <- c("PCo1","PCo2")
+scores$Group <- Temperature_filt
+
+eig  <- pcoa_res$eig
+prop <- eig[eig > 0] / sum(eig[eig > 0])
+xlab <- sprintf("PCo1 (%.1f%%)", 100*prop[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100*prop[2])
+
+library(ggplot2)
+ggplot(scores, aes(x = PCo1, y = PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) + 
+  labs(x = xlab, y = ylab, color = "Group") +
+  theme_classic(base_size = 14)
+
+### IPW-PCoA
+ipw <- ipw_pcoa(dist_bray_filt, x = Temperature_filt, z = meta[,c("Latitude", "Temperature", "ChlorophyllA", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")], k = 2)
+
+scores <- as.data.frame(ipw$scores)
+colnames(scores) <- c("PCo1", "PCo2")
+scores$Group <- Temperature_filt
+
+xlab <- sprintf("PCo1 (%.1f%%)", 100 * ipw$prop_explained[1])
+ylab <- sprintf("PCo2 (%.1f%%)", 100 * ipw$prop_explained[2])
+
+ggplot(scores, aes(PCo1, PCo2, color = Group)) +
+  geom_point(size = 3, alpha = 0.85) +
+  stat_ellipse(type = "t", level = 0.95, linewidth = 0.8) +
+  labs(x = xlab, y = ylab, color = "Group",
+       title = "IPW-adjusted PCoA (balanced on confounders)") +
+  theme_classic(base_size = 14)
+```
+
+
+## ChlorophyllA
+
+### Bray-Curtis
+```{r}
+ChlorophyllA_filt <- as.numeric(sample_data(ps_filt)[["ChlorophyllA"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "bray")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ ChlorophyllA_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ ChlorophyllA_filt + Depth.nominal + Latitude + Temperature + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,ChlorophyllA_filt,meta[,c("Depth.nominal", "Latitude", "Temperature", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+```
+
+### Aitchison
+```{r}
+ChlorophyllA_filt <- as.numeric(sample_data(ps_filt)[["ChlorophyllA"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "aitchison", pseudocount = 0.5)
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ ChlorophyllA_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ ChlorophyllA_filt + Depth.nominal + Latitude + Temperature + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,ChlorophyllA_filt,meta[,c("Depth.nominal", "Latitude", "Temperature", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+```
+
+### Jaccard
+```{r}
+ChlorophyllA_filt <- as.numeric(sample_data(ps_filt)[["ChlorophyllA"]])
+otu = otu_table(ps_filt)
+if (taxa_are_rows(otu_table(ps_filt))) otu <- t(otu)
+dist_bray_filt <- vegan::vegdist(otu, method = "jaccard")
+meta = as(sample_data(ps_filt), "data.frame")
+adonis2(dist_bray_filt ~ ChlorophyllA_filt, data=meta, permutations=999)$`Pr(>F)`[1]
+adonis2(dist_bray_filt ~ ChlorophyllA_filt + Depth.nominal + Latitude + Temperature + Gradient.Surface.temp.SST. + Brunt.Väisälä + Oxygen, data=meta, permutations=999)$`Pr(>F)`[1]
+ipw_permanova(dist_bray_filt,ChlorophyllA_filt,meta[,c("Depth.nominal", "Latitude", "Temperature", "Gradient.Surface.temp.SST.", "Brunt.Väisälä", "Oxygen")])$p_value
+```
+
+
+
+
+
+
