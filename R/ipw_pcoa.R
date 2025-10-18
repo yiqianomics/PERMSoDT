@@ -1,69 +1,56 @@
-#' IPW-adjusted PCoA (ordination with inverse-probability weights)
+#' IPW-adjusted & residualized PCoA (ordination with inverse-probability weights)
 #'
-#' Computes an inverse-probability-weighted principal coordinates analysis.
-#' Starting from an (unweighted) Gower double-centered Gram matrix \eqn{G},
-#' we apply *weighted centering* using propensity-based weights \eqn{w}:
-#' \deqn{G_w = (I - \mathbf{v}\mathbf{1}^\top)\, G\, (I - \mathbf{1}\mathbf{v}^\top),
-#' \quad \mathbf{v} = \frac{w}{\sum_i w_i}.}
-#' An eigendecomposition of \eqn{G_w} yields IPW-adjusted principal coordinates.
+#' Computes an inverse-probability-weighted principal coordinates analysis with
+#' optional confounder residualization in the IPW-induced geometry.
 #'
-#' If \code{z = NULL} and \code{weights = NULL}, the method reduces to classical PCoA.
-#' If \code{weights} are supplied, they are used directly (rescaled to sum to 1).
+#' Starting from a squared distance matrix D^2, we apply *weighted* Gower
+#' double-centering to obtain a Gram matrix:
+#'   B_w = -1/2 * J_w D^2 J_w^T,  with  J_w = I - 1 v^T,  v = w / sum(w).
+#' If confounders z are provided and residualize=TRUE, we remove the linear
+#' component explained by z under the IPW geometry:
+#'   B_res = W^{-1/2} M_Z~ ( W^{1/2} B_w W^{1/2} ) M_Z~ W^{-1/2},
+#' where  Z~ = W^{1/2} Z and M_Z~ is the orthogonal projector onto the residual
+#' space w.r.t. Z~. An eigendecomposition of B_res (or B_w if no residualization)
+#' yields the principal coordinates.
 #'
-#' @param D A square distance object (\code{dist}) or numeric matrix of size \eqn{n\times n}.
-#' @param x Optional trait (length \eqn{n}) used only to *estimate* IPW from \code{z}
-#'   when \code{weights} are not supplied. Can be numeric (continuous) or factor
-#'   (binary or multiclass). If \code{x=NULL} and \code{weights=NULL}, all weights are 1.
-#' @param z Optional confounder matrix or \code{data.frame} with \eqn{n} rows,
-#'   used to fit the propensity model for \code{x} and construct IPW.
-#' @param weights Optional vector of positive inverse-probability weights of length \eqn{n}.
-#'   If supplied, \code{x}, \code{z} and \code{family} are ignored for weighting.
-#'   Internally rescaled to sum 1 (centering operator depends on \eqn{\mathbf{v}} only).
-#' @param family Character; one of \code{"auto"}, \code{"binomial"}, or \code{"gaussian"}.
-#'   With \code{"auto"}, logistic is used for binary \code{x}, Gaussian working model for
-#'   continuous, and multinomial (via \pkg{nnet}) for factors with \eqn{>2} levels.
-#' @param trim Numeric in \([0,1)\); symmetric trim proportion for estimated weights.
+#' If z=NULL and weights=NULL, the method reduces to classical PCoA.
+#' If weights are supplied, they are used directly (rescaled to sum to 1).
+#'
+#' @param D A square distance object (`dist`) or numeric matrix (n x n).
+#' @param x Optional target/label (length n) used only to estimate IPW from `z`
+#'   when `weights` are not supplied. Numeric or factor. If `x=NULL` and
+#'   `weights=NULL`, all weights are 1.
+#' @param z Optional confounder matrix or data.frame with n rows for residualization.
+#'   If provided and `residualize=TRUE`, confounder effects are projected out in
+#'   the IPW-induced geometry.
+#' @param weights Optional positive inverse-probability weights (length n).
+#'   If supplied, `x`, `z` and `family` are ignored for weighting. Internally
+#'   rescaled to sum 1.
+#' @param family Character; one of "auto","binomial","gaussian".
+#' @param trim Numeric in [0,1); symmetric trim proportion for estimated weights.
 #' @param stabilise Logical; return stabilised IPW (marginal over conditional).
-#' @param k Optional integer; number of principal coordinates to return (default: all
-#'   positive-eigenvalue axes).
-#' @param weight_warn_cutoff Numeric; warn if \code{max(weights)} exceeds this threshold.
-#'
-#' @details
-#' \strong{Why this works.} In IPW, the reweighted pseudo-population balances \code{x}
-#' w.r.t. \code{z}. Applying weights in the centering operators (not in the distance itself)
-#' produces an embedding whose group structure visualises the \emph{adjusted} separation
-#' (i.e., what you would expect in the balanced pseudo-population). This is the ordination-level
-#' companion to IPW-PERMANOVA.
+#' @param residualize Logical; if TRUE and z is provided, perform weighted residualization.
+#' @param add_intercept Logical; include intercept in Z when residualizing (default TRUE).
+#' @param k Optional integer; number of axes to return (default: all positive-eig axes).
+#' @param weight_warn_cutoff Numeric; warn if max(weights) exceeds this threshold.
 #'
 #' @return A list with components:
-#' \itemize{
-#'   \item \code{scores}: \eqn{n \times k} matrix of IPW principal coordinates.
-#'   \item \code{eigenvalues}: vector of retained (nonnegative) eigenvalues.
-#'   \item \code{prop_explained}: fraction of total positive eigenvalue sum explained by each axis.
-#'   \item \code{cumulative}: cumulative explained proportions.
-#'   \item \code{weights}: the final (rescaled-to-sum-1) weights used for centering.
-#'   \item \code{gram}: the unweighted, Gower double-centered Gram matrix \eqn{G}.
-#'   \item \code{gram_weighted}: the IPW-centered Gram matrix \eqn{G_w}.
-#' }
-#'
-#' @examples
-#' ## Confounded binary example: visual contrast (ordinary PCoA vs IPW-PCoA)
-#' set.seed(1)
-#' n <- 90
-#' z <- data.frame(batch = sample(1:3, n, TRUE))
-#' x <- rbinom(n, 1, c(0.2, 0.5, 0.8)[z$batch])  # confounded with batch
-#' Y <- matrix(rnorm(n * 40, mean = 0.7 * x), n)
-#' D <- dist(Y)
-#' ipw_out <- ipw_pcoa(D, x, z)
-#' head(ipw_out$scores[,1:2]); ipw_out$prop_explained[1:3]
+#'   - scores: n x k matrix of principal coordinates.
+#'   - eigenvalues: retained nonnegative eigenvalues.
+#'   - prop_explained: fraction of sum of positive eigenvalues per axis.
+#'   - cumulative: cumulative explained fractions.
+#'   - weights: normalized weights used for centering (sum to 1).
+#'   - gram: weighted Gram before residualization (B_w).
+#'   - gram_resid: residualized Gram (if residualize), else NULL.
 #'
 #' @importFrom stats dist glm predict lm fitted residuals dnorm var quantile model.matrix
 #' @export
 ipw_pcoa <- function(
     D, x = NULL, z = NULL, weights = NULL,
-    family = c("auto","binomial","gaussian"),
-    trim = 0.01, stabilise = TRUE, k = NULL,
-    weight_warn_cutoff = 10
+    family = c("multinomial","binomial","gaussian"),
+    trim = 0.01, stabilise = TRUE,
+    residualize = TRUE, add_intercept = TRUE,
+    k = NULL, weight_warn_cutoff = 10
 ){
   ## ---- helpers --------------------------------------------------------------
   as_matrix <- function(D) {
@@ -86,7 +73,6 @@ ipw_pcoa <- function(
       p  <- mean(x_bin == 1)
       w  <- ifelse(x_bin == 1, p / pmax(pi, .Machine$double.eps),
                    (1 - p) / pmax(1 - pi, .Machine$double.eps))
-      # if not stabilised, remove the marginal factor
       if (!stabilise) w <- w / c(p, 1 - p)[x_bin + 1L]
     } else if (fam == "multinomial") {
       if (!requireNamespace("nnet", quietly = TRUE))
@@ -116,15 +102,30 @@ ipw_pcoa <- function(
     }
     w
   }
+  mmatrix_Z <- function(z, add_intercept = TRUE) {
+    z <- as.data.frame(z)
+    if (add_intercept) {
+      stats::model.matrix(~ ., data = z)  # includes intercept
+    } else {
+      M <- stats::model.matrix(~ . - 1, data = z)
+      # if all numeric and no column names, ensure matrix
+      as.matrix(M)
+    }
+  }
+  proj_residualizer <- function(Ztil) {
+    # returns MZtil = I - P_Ztil, with numerical stability via qr.solve
+    if (is.null(Ztil) || ncol(Ztil) == 0) return(diag(nrow(Ztil)))
+    R <- qr(t(Ztil) %*% Ztil)
+    P <- Ztil %*% qr.solve(R, t(Ztil))  # (Z~ (Z~'Z~)^-1 Z~')
+    diag(nrow(Ztil)) - P
+  }
+  
   ## ---- set up ---------------------------------------------------------------
   D  <- as_matrix(D)
   n  <- nrow(D)
   if (!is.null(x) && length(x) != n) stop("`x` must have length nrow(D).")
   if (!is.null(z) && nrow(as.data.frame(z)) != n) stop("`z` must have n rows.")
-  # Gower double-centering (unweighted) to obtain Gram matrix G
-  D2 <- D^2
-  J  <- diag(n) - matrix(1/n, n, n)
-  G  <- -0.5 * J %*% D2 %*% J
+  
   # Build / get weights
   fam <- match.arg(family)
   if (is.null(weights)) {
@@ -142,31 +143,45 @@ ipw_pcoa <- function(
     warning("Extreme weights detected (max = ", round(max(w_raw), 2),
             "). Check overlap / consider stronger trimming.")
   }
-  v <- as.numeric(w_raw / sum(w_raw))  # normalized to sum 1 (needed by weighted centering)
-  ## ---- weighted centering of Gram ------------------------------------------
-  # G_w = (I - v 1^T) G (I - 1 v^T)
-  One <- matrix(1, n, 1)
-  H_L <- diag(n) - v %*% t(One)
-  H_R <- diag(n) - One %*% t(v)
-  Gw  <- H_L %*% G %*% H_R
-  # Numerical symmetrization (very mild) before eigen
-  Gw  <- (Gw + t(Gw)) / 2
+  v  <- as.numeric(w_raw / sum(w_raw))  # normalized to sum 1
+  W  <- diag(as.numeric(w_raw), n, n)
+  Wt <- diag(sqrt(as.numeric(w_raw)), n, n)
+  
+  ## ---- weighted double-centering (Gower) ------------------------------------
+  D2 <- D^2
+  Jw <- diag(n) - matrix(1, n, 1) %*% t(matrix(v, n, 1))  # I - 1 v^T
+  Bw <- -0.5 * Jw %*% D2 %*% t(Jw)                        # weighted Gram
+  
+  ## ---- weighted residualization in IPW geometry -----------------------------
+  Bres <- NULL
+  if (!is.null(z) && isTRUE(residualize)) {
+    Zmm  <- mmatrix_Z(z, add_intercept = add_intercept)
+    Ztil <- Wt %*% Zmm
+    Btil <- Wt %*% Bw %*% Wt
+    MZt  <- proj_residualizer(Ztil)
+    Bres <- solve(Wt) %*% MZt %*% Btil %*% MZt %*% solve(Wt)
+    # mild symmetrization
+    Bres <- (Bres + t(Bres)) / 2
+    Guse <- Bres
+  } else {
+    Bw   <- (Bw + t(Bw)) / 2
+    Guse <- Bw
+  }
+  
   ## ---- eigendecomposition ---------------------------------------------------
-  ei  <- eigen(Gw, symmetric = TRUE)
+  ei   <- eigen(Guse, symmetric = TRUE)
   vals <- ei$values
   vecs <- ei$vectors
-  # keep nonnegative (tolerance) eigenvalues to avoid spurious negatives
   tol  <- max(1e-12, 1e-10 * max(abs(vals)))
   keep <- which(vals > tol)
-  if (length(keep) == 0L) stop("No positive eigenvalues after IPW-centering; check distances/weights.")
+  if (length(keep) == 0L)
+    stop("No positive eigenvalues after weighting/residualization; check distances/weights/z.")
   vals_pos <- vals[keep]
   vecs_pos <- vecs[, keep, drop = FALSE]
-  # principal coordinates: U * sqrt(Lambda)
-  scores <- vecs_pos %*% diag(sqrt(vals_pos), nrow = length(vals_pos))
-  # explained variance proportions among positive eigenvalues
-  prop  <- vals_pos / sum(vals_pos)
-  cum   <- cumsum(prop)
-  # optionally truncate to k axes
+  scores   <- vecs_pos %*% diag(sqrt(vals_pos), nrow = length(vals_pos))
+  prop     <- vals_pos / sum(vals_pos)
+  cum      <- cumsum(prop)
+  
   if (!is.null(k)) {
     k <- min(k, ncol(scores))
     scores   <- scores[, seq_len(k), drop = FALSE]
@@ -175,13 +190,14 @@ ipw_pcoa <- function(
     cum      <- cum[seq_len(k)]
   }
   colnames(scores) <- paste0("PCo", seq_len(ncol(scores)))
+  
   list(
     scores         = scores,
     eigenvalues    = vals_pos,
     prop_explained = prop,
     cumulative     = cum,
-    weights        = as.numeric(v),     # the normalized weights used in centering
-    gram           = G,
-    gram_weighted  = Gw
+    weights        = as.numeric(v),
+    gram           = Bw,
+    gram_resid     = Bres
   )
 }

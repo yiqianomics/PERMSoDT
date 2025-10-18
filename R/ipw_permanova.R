@@ -103,7 +103,7 @@
 #' @export
 ipw_permanova <- function(
     D, x, z = NULL, weights = NULL,
-    family = c("auto", "binomial", "gaussian"),
+    family = c("binomial", "multinomial", "gaussian"),
     permutation = TRUE, B = 999, seed = 2025,
     trim = 0.01, stabilise = TRUE,
     weight_warn_cutoff = 10
