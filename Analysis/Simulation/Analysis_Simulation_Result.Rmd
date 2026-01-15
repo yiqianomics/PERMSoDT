@@ -15,24 +15,31 @@ head(result1)
 ```{r}
 library(dplyr)
 library(tidyr)
+library(ggplot2)
+library(scales)
+library(patchwork)  # install.packages("patchwork") if needed
 
-# Long form summary (one row per Delta × method)
-by_delta_long <- result1 %>%
-  select(Delta, p_unadj, p_pool, p_ipw) %>%
-  pivot_longer(-Delta, names_to = "method", values_to = "p") %>%
-  group_by(Delta, method) %>%
+## --- 0) Keep only selected dissimilarities ---
+keep_diss <- c("UniFrac", "weighted UniFrac", "Bray-Curtis", "Jaccard", "GLaD")
+
+result1_sub <- result1 %>%
+  filter(dissimilarity %in% keep_diss) %>%
+  mutate(dissimilarity = factor(dissimilarity, levels = keep_diss))
+
+## --- 1) Long form summary (one row per dissimilarity × Delta × method) ---
+by_delta_long <- result1_sub %>%
+  select(dissimilarity, Delta, p_unadj, p_pool, p_ipw) %>%
+  pivot_longer(cols = c(p_unadj, p_pool, p_ipw),
+               names_to = "method", values_to = "p") %>%
+  group_by(dissimilarity, Delta, method) %>%
   summarise(
     n = sum(!is.na(p)),
     prop_sig = mean(p < 0.05, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  arrange(Delta, method)
+  arrange(dissimilarity, Delta, method)
 
-by_delta_long
-
-library(ggplot2)
-
-# Map method names for plotting
+## --- 2) Method labels for plotting ---
 method_labels <- c(
   p_unadj = "adonis2 (unadjusted)",
   p_pool  = "adonis2 (+ Z)",
@@ -40,26 +47,52 @@ method_labels <- c(
 )
 
 plot_df <- by_delta_long %>%
-  mutate(method = recode(method, !!!method_labels),
-         method = factor(method, levels = c("adonis2 (unadjusted)",
-                                            "adonis2 (+ Z)",
-                                            "IPW-PERMANOVA")))
+  mutate(
+    method = recode(method, !!!method_labels),
+    method = factor(method, levels = c("adonis2 (unadjusted)",
+                                       "adonis2 (+ Z)",
+                                       "IPW-PERMANOVA"))
+  )
 
-gg <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
-                          color = method, linetype = method, shape = method)) +
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
-  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
-  labs(x = expression(Delta),
-       y = "Proportion with p < 0.05",
-       color = "Method", linetype = "Method", shape = "Method",
-       title = "Proportion of significant tests by Δ",
-       subtitle = "Aggregated over replicates / dissimilarities") +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top")
+## --- 3) Fewer x-axis labels to avoid overlap ---
+delta_breaks <- pretty(range(plot_df$Delta, na.rm = TRUE), n = 4)
 
-print(gg)
+## --- 4) Build one plot per dissimilarity; y-axis title only on the first; no legend ---
+diss_levels <- levels(plot_df$dissimilarity)
+
+plot_list <- lapply(seq_along(diss_levels), function(i) {
+  diss <- diss_levels[i]
+  df_i <- plot_df %>% filter(dissimilarity == diss)
+
+  p <- ggplot(df_i, aes(x = Delta, y = prop_sig,
+                        color = method, linetype = method, shape = method)) +
+    geom_line(linewidth = 1, show.legend = FALSE) +
+    geom_point(size = 2, show.legend = FALSE) +
+    scale_y_continuous(labels = percent_format(accuracy = 1), limits = c(0, 1)) +
+    scale_x_continuous(breaks = delta_breaks) +
+    labs(
+      x = expression(Delta),
+      y = if (i == 1) "Proportion with p < 0.05" else NULL,
+      title = diss
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(size = 8),
+      plot.title = element_text(hjust = 0.5, size = 10)
+    )
+
+  if (i != 1) {
+    p <- p + theme(axis.title.y = element_blank())
+  }
+  p
+})
+
+combined_1x5 <-
+  wrap_plots(plot_list, nrow = 1) 
+
+print(combined_1x5)
+
 ```
 
 ## With different setting
@@ -67,19 +100,28 @@ print(gg)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(scales)
+library(patchwork)  # install.packages("patchwork") if needed
 
-# Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
-by_panel <- result1 %>%
-  select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
+## --- 0) Choose dissimilarities to plot (and keep a nice order) ---
+keep_diss <- c("UniFrac", "weighted UniFrac", "Bray-Curtis", "Jaccard")
+
+result1_sub <- result1 %>%
+  filter(dissimilarity %in% keep_diss) %>%
+  mutate(dissimilarity = factor(dissimilarity, levels = keep_diss))
+
+## --- 1) Summarize p<0.05 by dissimilarity × Delta × method × n × ps ---
+by_panel <- result1_sub %>%
+  select(dissimilarity, n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
   pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
-  group_by(n, ps, Delta, method) %>%
+  group_by(dissimilarity, n, ps, Delta, method) %>%
   summarise(
-    n_tests = sum(!is.na(p)),
+    n_tests  = sum(!is.na(p)),
     prop_sig = mean(p < 0.05, na.rm = TRUE),
-    .groups = "drop"
+    .groups  = "drop"
   )
 
-# Nice labels
+## --- 2) Nice labels / factors ---
 method_labels <- c(
   p_unadj = "adonis2 (unadjusted)",
   p_pool  = "adonis2 (+ Z)",
@@ -91,30 +133,56 @@ plot_df <- by_panel %>%
     method = factor(recode(method, !!!method_labels),
                     levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
     n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
-    ps_f = factor(ps, levels = c(0.2, 2.0),   labels = c("ps = 0.2 (weak)", "ps = 2 (strong)"))
+    ps_f = factor(ps, levels = c(0.2, 2.0),   labels = c("Weak", "Strong"))
   )
 
-gg1 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
-                          color = method, linetype = method, shape = method)) +
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  scale_y_continuous(limits = c(0, 1),
-                     breaks = seq(0, 1, by = 0.2),
-                     labels = scales::percent_format(accuracy = 1)) +
-  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
-  labs(x = expression(Delta),
-       y = "Proportion with p < 0.05",
-       color = "Method", linetype = "Method", shape = "Method",
-       title = "Proportion of significant tests by Δ",
-       subtitle = "Faceted by sample size (columns) and confounding strength ps (rows)") +
-  facet_grid(ps_f ~ n_f) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top")
+## --- 3) Fewer axis labels (avoid overlap) ---
+delta_breaks <- scales::pretty_breaks(n = 4)(plot_df$Delta)
+y_breaks     <- c(0, 0.5, 1)  # fewer y-axis numbers
 
-print(gg1)
+## --- 4) One faceted plot per dissimilarity, then stack vertically (5 × 1) ---
+diss_levels <- levels(plot_df$dissimilarity)
 
-# Optional: save to file
-# ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
+plot_list <- lapply(seq_along(diss_levels), function(i) {
+  diss <- diss_levels[i]
+  df_i <- plot_df %>% filter(dissimilarity == diss)
+
+  ggplot(df_i, aes(x = Delta, y = prop_sig,
+                   color = method, linetype = method, shape = method)) +
+    geom_line(linewidth = 0.9, show.legend = FALSE) +
+    geom_point(size = 1.8, show.legend = FALSE) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = y_breaks,
+      labels = percent_format(accuracy = 1)
+    ) +
+    scale_x_continuous(breaks = delta_breaks) +
+    facet_grid(ps_f ~ n_f) +
+    labs(
+      title = diss,
+      x = if (i == length(diss_levels)) expression(Delta) else NULL,
+      y = if (i == 3) "Proportion with p < 0.05" else NULL   # y-label only on 3rd plot
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.spacing.y = unit(0.9, "lines"),
+      legend.position = "none",
+      plot.title  = element_text(size = 12, hjust = 0.5),
+      strip.text  = element_text(size = 10),
+      axis.text.x = element_text(size = 9),
+      axis.title.x = element_text(margin = margin(t = 6)),
+      axis.title.y = element_text(margin = margin(r = 6))
+    )
+})
+
+combined_5x1_1 <-
+  wrap_plots(plot_list, ncol = 1) +
+  plot_annotation(
+    title = "Proportion of significant tests by Δ",
+    subtitle = "Faceted by sample size (columns) and confounding strength ps (rows); one panel per dissimilarity"
+  )
+
+print(combined_5x1_1)
 
 ```
 
@@ -182,19 +250,28 @@ print(gg)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(scales)
+library(patchwork)  # install.packages("patchwork") if needed
 
-# Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
-by_panel <- result %>%
-  select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
+## --- 0) Choose dissimilarities to plot (and keep a nice order) ---
+keep_diss <- c("UniFrac", "weighted UniFrac", "Bray-Curtis", "Jaccard")
+
+result_sub <- result %>%
+  filter(dissimilarity %in% keep_diss) %>%
+  mutate(dissimilarity = factor(dissimilarity, levels = keep_diss))
+
+## --- 1) Summarize p<0.05 by dissimilarity × Delta × method × n × ps ---
+by_panel <- result_sub %>%
+  select(dissimilarity, n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
   pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
-  group_by(n, ps, Delta, method) %>%
+  group_by(dissimilarity, n, ps, Delta, method) %>%
   summarise(
-    n_tests = sum(!is.na(p)),
+    n_tests  = sum(!is.na(p)),
     prop_sig = mean(p < 0.05, na.rm = TRUE),
-    .groups = "drop"
+    .groups  = "drop"
   )
 
-# Nice labels
+## --- 2) Nice labels ---
 method_labels <- c(
   p_unadj = "adonis2 (unadjusted)",
   p_pool  = "adonis2 (+ Z)",
@@ -206,27 +283,59 @@ plot_df <- by_panel %>%
     method = factor(recode(method, !!!method_labels),
                     levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
     n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
-    ps_f = factor(ps, levels = c(0.1, 0.25),   labels = c("ps = 0.1 (weak)", "ps = 0.25 (strong)"))
+    ps_f = factor(ps, levels = c(0.1, 0.25), labels = c("Weak", "Strong"))
   )
 
-gg2 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
-                          color = method, linetype = method, shape = method)) +
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  scale_y_continuous(limits = c(0, 1),
-                     breaks = seq(0, 1, by = 0.2),
-                     labels = scales::percent_format(accuracy = 1)) +
-  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
-  labs(x = expression(Delta),
-       y = "Proportion with p < 0.05",
-       color = "Method", linetype = "Method", shape = "Method",
-       title = "Proportion of significant tests by Δ",
-       subtitle = "Faceted by sample size (columns) and confounding strength ps (rows)") +
-  facet_grid(ps_f ~ n_f) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top")
+## --- 3) Fewer axis labels (avoid overlap) ---
+delta_breaks <- scales::pretty_breaks(n = 4)(plot_df$Delta)
+y_breaks     <- c(0, 0.5, 1)  # fewer y-axis numbers
 
-print(gg2)
+## --- 4) One faceted plot per dissimilarity, then stack vertically (5 × 1) ---
+diss_levels <- levels(plot_df$dissimilarity)
+
+plot_list <- lapply(seq_along(diss_levels), function(i) {
+  diss <- diss_levels[i]
+  df_i <- plot_df %>% filter(dissimilarity == diss)
+
+  ggplot(df_i, aes(x = Delta, y = prop_sig,
+                   color = method, linetype = method, shape = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 1.8) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = y_breaks,
+      labels = percent_format(accuracy = 1)
+    ) +
+    scale_x_continuous(breaks = delta_breaks) +
+    facet_grid(ps_f ~ n_f) +
+    labs(
+      title = diss,
+      x = if (i == length(diss_levels)) expression(Delta) else NULL,
+      y = if (i == 3) "Proportion with p < 0.05" else NULL  # y-label only on 3rd plot
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.spacing.y = unit(0.9, "lines"),
+      #legend.position = "none",
+      plot.title = element_text(size = 12, hjust = 0.5),
+      strip.text = element_text(size = 10),
+      axis.text.x = element_text(size = 9),
+      axis.title.x = element_text(margin = margin(t = 6)),
+      axis.title.y = element_text(margin = margin(r = 6))
+    )
+})
+
+combined_5x1_2 <-
+  wrap_plots(plot_list, ncol = 1, guides = "collect") +
+  plot_annotation(
+    title = "Proportion of significant tests by Δ",
+    subtitle = "Faceted by sample size (columns) and confounding strength ps (rows); one panel per dissimilarity"
+  ) &
+  theme(legend.position = "bottom")
+
+
+print(combined_5x1_2)
+
 
 # Optional: save to file
 # ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
@@ -296,19 +405,28 @@ print(gg)
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(scales)
+library(patchwork)  # install.packages("patchwork") if needed
 
-# Summarize p<0.05 by Delta × method × n × ps (NAs excluded)
-by_panel <- result %>%
-  select(n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
+## --- 0) Choose dissimilarities to plot (and keep a nice order) ---
+keep_diss <- c("UniFrac", "weighted UniFrac", "Bray-Curtis", "Jaccard")
+
+result_sub <- result %>%
+  filter(dissimilarity %in% keep_diss) %>%
+  mutate(dissimilarity = factor(dissimilarity, levels = keep_diss))
+
+## --- 1) Summarize p<0.05 by dissimilarity × Delta × method × n × ps ---
+by_panel <- result_sub %>%
+  select(dissimilarity, n, ps, Delta, p_unadj, p_pool, p_ipw) %>%
   pivot_longer(c(p_unadj, p_pool, p_ipw), names_to = "method", values_to = "p") %>%
-  group_by(n, ps, Delta, method) %>%
+  group_by(dissimilarity, n, ps, Delta, method) %>%
   summarise(
-    n_tests = sum(!is.na(p)),
+    n_tests  = sum(!is.na(p)),
     prop_sig = mean(p < 0.05, na.rm = TRUE),
-    .groups = "drop"
+    .groups  = "drop"
   )
 
-# Nice labels
+## --- 2) Nice labels ---
 method_labels <- c(
   p_unadj = "adonis2 (unadjusted)",
   p_pool  = "adonis2 (+ Z)",
@@ -320,27 +438,59 @@ plot_df <- by_panel %>%
     method = factor(recode(method, !!!method_labels),
                     levels = c("adonis2 (unadjusted)", "adonis2 (+ Z)", "IPW-PERMANOVA")),
     n_f  = factor(n,  levels = c(40, 60, 80), labels = c("n = 40", "n = 60", "n = 80")),
-    ps_f = factor(ps, levels = c(0.2, 1.2),   labels = c("ps = 0.2 (weak)", "ps = 1.2 (strong)"))
+    ps_f = factor(ps, levels = c(0.2, 1.2), labels = c("Weak", "Strong"))
   )
 
-gg3 <- ggplot(plot_df, aes(x = Delta, y = prop_sig,
-                          color = method, linetype = method, shape = method)) +
-  geom_line(size = 1) +
-  geom_point(size = 2) +
-  scale_y_continuous(limits = c(0, 1),
-                     breaks = seq(0, 1, by = 0.2),
-                     labels = scales::percent_format(accuracy = 1)) +
-  scale_x_continuous(breaks = sort(unique(plot_df$Delta))) +
-  labs(x = expression(Delta),
-       y = "Proportion with p < 0.05",
-       color = "Method", linetype = "Method", shape = "Method",
-       title = "Proportion of significant tests by Δ",
-       subtitle = "Faceted by sample size (columns) and confounding strength ps (rows)") +
-  facet_grid(ps_f ~ n_f) +
-  theme_minimal(base_size = 12) +
-  theme(legend.position = "top")
+## --- 3) Fewer axis labels (avoid overlap) ---
+delta_breaks <- scales::pretty_breaks(n = 4)(plot_df$Delta)
+y_breaks     <- c(0, 0.5, 1)
 
-print(gg3)
+## --- 4) One faceted plot per dissimilarity, then stack vertically (5 × 1) ---
+diss_levels <- levels(plot_df$dissimilarity)
+
+plot_list <- lapply(seq_along(diss_levels), function(i) {
+  diss <- diss_levels[i]
+  df_i <- plot_df %>% filter(dissimilarity == diss)
+
+  ggplot(df_i, aes(x = Delta, y = prop_sig,
+                   color = method, linetype = method, shape = method)) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 1.8) +
+    scale_y_continuous(
+      limits = c(0, 1),
+      breaks = y_breaks,
+      labels = percent_format(accuracy = 1)
+    ) +
+    scale_x_continuous(breaks = delta_breaks) +
+    facet_grid(ps_f ~ n_f) +
+    labs(
+      title = diss,
+      x = if (i == length(diss_levels)) expression(Delta) else NULL,
+      y = if (i == 3) "Proportion with p < 0.05" else NULL
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.spacing.y = unit(0.9, "lines"),
+      #legend.position = "none",
+      plot.title  = element_text(size = 12, hjust = 0.5),
+      strip.text  = element_text(size = 10),
+      axis.text.x = element_text(size = 9),
+      axis.title.x = element_text(margin = margin(t = 6)),
+      axis.title.y = element_text(margin = margin(r = 6))
+    )
+})
+
+combined_5x1_3 <-
+  wrap_plots(plot_list, ncol = 1, guides = "collect") +
+  plot_annotation(
+    title = "Proportion of significant tests by Δ",
+    subtitle = "Faceted by sample size (columns) and confounding strength ps (rows); one panel per dissimilarity"
+  ) &
+  theme(legend.position = "bottom")
+
+
+print(combined_5x1_3)
+
 
 # Optional: save to file
 # ggsave("results/prop_sig_by_delta_facet.png", gg, width = 12, height = 6, dpi = 300)
@@ -353,29 +503,151 @@ print(gg3)
 ```{r}
 library(patchwork)
 
-# Helper function to drop title and legend
-strip_plot <- function(p) {
-  p +
-    labs(title = NULL, subtitle = NULL) +
+# Clean each block (remove its own title/subtitle; no legends)
+clean_block <- function(p) {
+  p + plot_annotation(title = NULL, subtitle = NULL) &
     theme(legend.position = "none")
 }
 
-# Keep legend in the first plot only
-gg1_clean <- strip_plot(gg1)
-gg2_clean <- strip_plot(gg2)
-gg3_clean <- strip_plot(gg3) +
-              theme(legend.position = "bottom")
+# Wrap each block so patchwork treats it as ONE "leaf" plot
+b1 <- wrap_elements(full = clean_block(combined_5x1_1))
+b2 <- wrap_elements(full = clean_block(combined_5x1_2))
+b3 <- wrap_elements(full = clean_block(combined_5x1_3))
 
-# Combine them in one row (or adjust layout)
-combined <- (gg1_clean / gg2_clean / gg3_clean) +
-             plot_annotation(tag_levels = "a")
+# Now stacking will tag only the 3 blocks: a, b, c
+combined_all <-
+  (b1 / b2 / b3) +
+  plot_layout(heights = c(1, 1, 1)) +
+  plot_annotation(tag_levels = "a") &
+  theme(
+    plot.tag.position = c(0, 1),
+    plot.tag = element_text(face = "bold")
+  )
 
-# Print
-combined
+print(combined_all)
+ggsave("SimulatedResult.png", combined_all, width = 8, height = 17, dpi = 1000)
+```
 
-# Save combined plot as PNG
-ggsave("SimulatedResult.png", combined,
-       width = 8, height = 12, dpi = 1000)
+
+```{r}
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+
+# Remove internal titles/subtitles from each combined_5x1 block
+strip_block <- function(p) {
+  p + plot_annotation(title = NULL, subtitle = NULL)
+}
+
+# ---- Blocks (remove y-axis TITLE from both; keep y-axis ticks/labels) ----
+p1 <- strip_block(combined_5x1_1) &
+  theme(
+    legend.position = "none",
+    axis.title.y = element_blank()   # remove internal y label
+  )
+
+# Put legend at bottom temporarily so we can extract it; center it
+p2_with_leg <- strip_block(combined_5x1_2) &
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.box.just = "center",
+    legend.justification = "center",
+    axis.title.y = element_blank()   # remove internal y label in the 2nd column too
+  )
+
+# Extract legend ONCE (method legend with color/linetype/shape)
+leg_grob <- cowplot::get_legend(p2_with_leg)
+leg_plot <- cowplot::ggdraw(leg_grob)
+
+# Remove legend from p2 for the top panel (since legend will be shared at bottom)
+p2 <- strip_block(combined_5x1_2) &
+  theme(
+    legend.position = "none",
+    axis.title.y = element_blank()   # remove internal y label
+  )
+
+# Wrap blocks so patchwork tags ONLY these two blocks (not inner dissimilarities)
+b1 <- wrap_elements(full = p1)
+b2 <- wrap_elements(full = p2)
+
+# ---- Combine two columns + ONLY a/b tags ----
+top_row <-
+  (b1 | b2) +
+  plot_annotation(tag_levels = "a") &
+  theme(
+    plot.tag.position = c(0, 1),
+    plot.tag = element_text(face = "bold")
+  )
+
+# ---- Add shared legend at bottom ----
+combined_base <-
+  top_row /
+  wrap_elements(full = leg_plot) +
+  plot_layout(heights = c(1, 0.05))  # adjust 0.05 if you want more/less legend height
+
+# ---- Add ONE shared y-axis label, vertically centered ----
+# Give the whole plot some extra left margin so the label doesn't overlap
+combined_base <- combined_base & theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 40))
+
+combined_binary_continuous <-
+  cowplot::ggdraw(combined_base) +
+  cowplot::draw_label(
+    "Proportion with p < 0.05",
+    x = 0.03, y = 0.55, angle = 90,
+    vjust = 0.5, hjust = 0.5
+  )
+
+print(combined_binary_continuous)
+
+ggsave(
+  "SimulatedResult_BinaryContinous.png",
+  combined_binary_continuous,
+  width = 16, height = 12, dpi = 1000
+)
+
+
+# ---- Ordinal saved separately (its own legend, centered) ----
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+
+strip_block <- function(p) {
+  p + plot_annotation(title = NULL, subtitle = NULL)
+}
+
+# ---- Ordinal: remove internal y-axis title, add ONE centered y-axis label, keep legend bottom ----
+ordinal_base <- strip_block(combined_5x1_3) &
+  theme(
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    legend.box.just = "center",
+    legend.justification = "center",
+    axis.title.y = element_blank()            # remove internal y label
+  )
+
+# Give extra left margin so the shared label won't overlap
+ordinal_base <- ordinal_base & theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 40))
+
+ordinal_plot <-
+  cowplot::ggdraw(ordinal_base) +
+  cowplot::draw_label(
+    "Proportion with p < 0.05",
+    x = 0.1, y = 0.55, angle = 90,
+    vjust = 0.5, hjust = 0.5
+  )
+
+print(ordinal_plot)
+
+ggsave(
+  "SimulatedResult_Ordinal.png",
+  ordinal_plot,
+  width = 8, height = 9, dpi = 1000
+)
+
+
 
 ```
+
+
 
